@@ -3,6 +3,7 @@
   import VideoRemoteViewer from '$lib/components/asset-viewer/video-remote-viewer.svelte';
   import { assetViewerFadeDuration } from '$lib/constants';
   import { castManager } from '$lib/managers/cast-manager.svelte';
+  import { eventManager } from '$lib/managers/event-manager.svelte';
   import { isFaceEditMode } from '$lib/stores/face-edit.svelte';
   import {
     autoPlayVideo,
@@ -19,6 +20,7 @@
   import { fade } from 'svelte/transition';
 
   interface Props {
+    transitionName?: string;
     assetId: string;
     imageSize: Size;
     loopVideo: boolean;
@@ -32,6 +34,7 @@
   }
 
   let {
+    transitionName,
     assetId,
     imageSize,
     loopVideo,
@@ -61,7 +64,6 @@
   });
 
   $effect(() => {
-    // reactive on `assetFileUrl` changes
     if (assetFileUrl) {
       hasFocused = false;
       videoPlayer?.load();
@@ -142,6 +144,7 @@
       </div>
     {:else}
       <video
+        style:view-transition-name={transitionName}
         bind:this={videoPlayer}
         loop={$loopVideoPreference && loopVideo}
         autoplay={$autoPlayVideo}
@@ -150,6 +153,7 @@
         disablePictureInPicture
         class="h-full object-contain"
         {...useSwipe(onSwipe)}
+        onloadedmetadata={() => eventManager.emit('ViewerOpenTransitionReady')}
         oncanplay={(e) => handleCanPlay(e.currentTarget)}
         onended={onVideoEnded}
         onvolumechange={(e) => ($videoViewerMuted = e.currentTarget.muted)}

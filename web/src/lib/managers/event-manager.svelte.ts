@@ -89,6 +89,15 @@ export type Events = {
   ReleaseEvent: [ReleaseEvent];
 
   WebsocketConnect: [];
+
+  TimelineLoaded: [{ id: string | null }];
+  TimelineScrolledToAsset: [{ id: string }];
+
+  ViewerAfterNavigate: [];
+  ViewerCloseTransition: [{ id: string }];
+  ViewerCloseTransitionReady: [];
+  ViewerOpenTransition: [];
+  ViewerOpenTransitionReady: [];
 };
 
 export const eventManager = new BaseEventManager<Events>();

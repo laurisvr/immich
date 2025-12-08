@@ -207,6 +207,9 @@
     const gap = 15;
     const padding = faceRect.padding ?? 0;
     const rawBox = faceRect.getBoundingRect();
+    if (Number.isNaN(rawBox.left) || Number.isNaN(rawBox.width)) {
+      return;
+    }
     const { currentZoom, currentPositionX, currentPositionY } = assetViewerManager.zoomState;
     const faceBox = {
       left: (rawBox.left - padding) * currentZoom + currentPositionX,

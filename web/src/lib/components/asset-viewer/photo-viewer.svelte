@@ -8,6 +8,7 @@
   import AssetViewerEvents from '$lib/components/AssetViewerEvents.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { castManager } from '$lib/managers/cast-manager.svelte';
+  import { eventManager } from '$lib/managers/event-manager.svelte';
   import { isFaceEditMode } from '$lib/stores/face-edit.svelte';
   import { ocrManager } from '$lib/stores/ocr.svelte';
   import { boundingBoxesArray, type Faces } from '$lib/stores/people.store';
@@ -29,14 +30,26 @@
     cursor: AssetCursor;
     element?: HTMLDivElement;
     sharedLink?: SharedLinkResponseDto;
-    onReady?: () => void;
+    transitionName?: string;
+    letterboxTransitionName?: string;
     onError?: () => void;
     onSwipe?: (event: SwipeCustomEvent) => void;
   }
 
-  let { cursor, element = $bindable(), sharedLink, onReady, onError, onSwipe }: Props = $props();
+  let {
+    cursor,
+    element = $bindable(),
+    sharedLink,
+    transitionName,
+    letterboxTransitionName,
+    onError,
+    onSwipe,
+  }: Props = $props();
 
   const { slideshowState, slideshowLook } = slideshowStore;
+  const objectFit = $derived(
+    $slideshowState !== SlideshowState.None && $slideshowLook === SlideshowLook.Cover ? 'cover' : 'contain',
+  );
   const asset = $derived(cursor.current);
 
   let visibleImageReady: boolean = $state(false);
@@ -183,20 +196,23 @@
     {asset}
     {sharedLink}
     {container}
-    objectFit={$slideshowState !== SlideshowState.None && $slideshowLook === SlideshowLook.Cover ? 'cover' : 'contain'}
+    {objectFit}
     {onUrlChange}
     onImageReady={() => {
       visibleImageReady = true;
-      onReady?.();
+      eventManager.emit('ViewerOpenTransitionReady');
     }}
     onError={() => {
       onError?.();
-      onReady?.();
+      eventManager.emit('ViewerOpenTransitionReady');
     }}
     bind:imgRef={assetViewerManager.imgRef}
     bind:imageNaturalSize={imageDimensions}
     bind:imageScaledSize={scaledDimensions}
     bind:ref={adaptiveImage}
+    {transitionName}
+    {letterboxTransitionName}
+    showLetterboxes={!blurredSlideshow}
   >
     {#snippet backdrop()}
       {#if blurredSlideshow}

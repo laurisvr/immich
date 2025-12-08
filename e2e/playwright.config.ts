@@ -43,7 +43,7 @@ const config: PlaywrightTestConfig = {
       use: { ...devices['Desktop Chrome'] },
       testDir: './src/ui/specs',
       fullyParallel: true,
-      workers: process.env.CI ? 3 : Math.max(1, Math.round(cpus().length * 0.75) - 1),
+      workers: process.env.CI ? 3 : Math.min(10, Math.max(1, Math.round(cpus().length * 0.75) - 1)),
     },
     {
       name: 'maintenance',

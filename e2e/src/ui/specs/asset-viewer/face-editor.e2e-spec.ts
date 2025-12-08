@@ -10,16 +10,21 @@ import { assetViewerUtils } from '../timeline/utils';
 import { setupAssetViewerFixture } from './utils';
 
 const waitForSelectorTransition = async (page: Page) => {
-  await page.waitForFunction(
-    () => {
-      const selector = document.querySelector('#face-selector') as HTMLElement | null;
-      if (!selector) {
-        return false;
-      }
-      return selector.getAnimations({ subtree: false }).every((animation) => animation.playState === 'finished');
-    },
-    undefined,
-    { timeout: 1000, polling: 50 },
+  await expect(page.locator('#face-editor-data')).toHaveAttribute('data-face-width', /^[1-9]/, { timeout: 10_000 });
+  await page.locator('#face-selector').evaluate(
+    (el) =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            const animations = el.getAnimations();
+            if (animations.length === 0) {
+              resolve();
+              return;
+            }
+            void Promise.all(animations.map((a) => a.finished)).then(() => resolve());
+          }),
+        );
+      }),
   );
 };
 
@@ -95,7 +100,7 @@ test.describe('face-editor', () => {
     await page.mouse.down();
     await page.mouse.move(centerX + deltaX, centerY + deltaY, { steps: 5 });
     await page.mouse.up();
-    await page.waitForTimeout(300);
+    await waitForSelectorTransition(page);
   };
 
   test('Face editor opens with person list', async ({ page }) => {
@@ -318,7 +323,7 @@ test.describe('face-editor', () => {
     const centerY = beforeClick.top + beforeClick.height / 2;
 
     await page.mouse.click(centerX, centerY);
-    await page.waitForTimeout(300);
+    await waitForSelectorTransition(page);
 
     const afterClick = await getFaceBoxRect(page);
     expect(Math.abs(afterClick.left - beforeClick.left)).toBeLessThan(3);
