@@ -19,6 +19,7 @@
   import MenuOption from '$lib/components/shared-components/context-menu/menu-option.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { languageManager } from '$lib/managers/language-manager.svelte';
+  import { viewTransitionManager } from '$lib/managers/ViewTransitionManager.svelte';
   import { Route } from '$lib/route';
   import { getGlobalActions } from '$lib/services/app.service';
   import { getAssetActions } from '$lib/services/asset.service';
@@ -184,7 +185,12 @@
             {#if !asset.isArchived && !asset.isTrashed}
               <MenuOption
                 icon={mdiImageSearch}
-                onClick={() => goto(Route.photos({ at: stack?.primaryAssetId ?? asset.id }))}
+                onClick={() => {
+                  void viewTransitionManager.startTransition({
+                    types: ['viewer'],
+                    performUpdate: () => goto(Route.photos({ at: stack?.primaryAssetId ?? asset.id })),
+                  });
+                }}
                 text={$t('view_in_timeline')}
               />
             {/if}

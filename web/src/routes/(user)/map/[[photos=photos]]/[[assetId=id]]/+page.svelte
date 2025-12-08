@@ -6,13 +6,16 @@
   import { timeToLoadTheMap } from '$lib/constants';
   import Portal from '$lib/elements/Portal.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
+  import { viewTransitionManager } from '$lib/managers/ViewTransitionManager.svelte';
   import { Route } from '$lib/route';
   import { assetViewingStore } from '$lib/stores/asset-viewing.store';
   import { handlePromiseError } from '$lib/utils';
   import { delay } from '$lib/utils/asset-utils';
   import { navigate } from '$lib/utils/navigation';
   import { LoadingSpinner } from '@immich/ui';
+  import { linear } from 'svelte/easing';
   import { onDestroy } from 'svelte';
+  import { fly } from 'svelte/transition';
   import type { PageData } from './$types';
 
   interface Props {
@@ -41,9 +44,14 @@
     handlePromiseError(goto(Route.photos()));
   }
 
-  async function onViewAssets(assetIds: string[]) {
-    await setAssetId(assetIds[0]);
-    closeTimelinePanel();
+  function onViewAssets(assetIds: string[]) {
+    void viewTransitionManager.startTransition({
+      types: ['viewer'],
+      performUpdate: async () => {
+        await setAssetId(assetIds[0]);
+        closeTimelinePanel();
+      },
+    });
   }
 
   function onClusterSelect(assetIds: string[], bbox: SelectionBBox) {
@@ -77,7 +85,10 @@
       </div>
 
       {#if isTimelinePanelVisible && selectedClusterBBox}
-        <div class="h-1/2 min-h-0 w-full pt-2 sm:h-full sm:w-1/3 sm:ps-2 sm:pt-0">
+        <div
+          transition:fly={{ x: 400, duration: 150, easing: linear }}
+          class="h-1/2 min-h-0 w-full pt-2 sm:h-full sm:w-1/3 sm:ps-2 sm:pt-0"
+        >
           <MapTimelinePanel
             bbox={selectedClusterBBox}
             {selectedClusterIds}
@@ -89,7 +100,7 @@
     </div>
   </UserPageLayout>
   <Portal target="body">
-    {#if $showAssetViewer}
+    {#if $showAssetViewer && !isTimelinePanelVisible}
       {#await import('$lib/components/asset-viewer/asset-viewer.svelte') then { default: AssetViewer }}
         <AssetViewer
           cursor={{ current: $viewingAsset }}
