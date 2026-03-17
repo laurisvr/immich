@@ -296,8 +296,19 @@
 
     const targetAsset = order === 'previous' ? previousAsset : nextAsset;
     const slideshowAllowsTransition = !slideShowPlaying || $slideshowTransition;
-    const useTransition = canTransition && slideshowAllowsTransition && (slideShowShuffle || !!targetAsset);
-    const hasNext = useTransition ? await startTransition(types, targetTransition, navigate) : await navigate();
+    const useTransition = slideshowAllowsTransition && (slideShowShuffle || !!targetAsset);
+
+    let hasNext: boolean;
+    if (slideShowPlaying && useTransition) {
+      hasNext = false;
+      await crossfadeViewerContent(async () => {
+        hasNext = await navigate();
+      }, 1000);
+    } else if (canTransition && useTransition) {
+      hasNext = await startTransition(types, targetTransition, navigate);
+    } else {
+      hasNext = await navigate();
+    }
 
     if (!slideShowPlaying) {
       return;

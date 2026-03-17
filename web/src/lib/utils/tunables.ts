@@ -31,4 +31,8 @@ export const TUNABLES = {
   IMAGE_THUMBNAIL: {
     THUMBHASH_FADE_DURATION: getNumber(storage.getItem('THUMBHASH_FADE_DURATION'), 100),
   },
+  KEN_BURNS: {
+    SMARTCROP: getBoolean(storage.getItem('KEN_BURNS.SMARTCROP'), true),
+    FACE_BOOST: getBoolean(storage.getItem('KEN_BURNS.FACE_BOOST'), true),
+  },
 };

@@ -98,6 +98,7 @@ export type Events = {
   ViewerCloseTransitionReady: [];
   ViewerOpenTransition: [];
   ViewerOpenTransitionReady: [];
+  ViewTransitionOldSnapshotPending: [];
 };
 
 export const eventManager = new BaseEventManager<Events>();
