@@ -1,7 +1,7 @@
 <script lang="ts">
   import { transformManager } from '$lib/managers/edit/transform-manager.svelte';
-  import { Button, HStack, IconButton } from '@immich/ui';
-  import { mdiFlipHorizontal, mdiFlipVertical, mdiRotateLeft, mdiRotateRight } from '@mdi/js';
+  import { Button, HStack, Icon, IconButton } from '@immich/ui';
+  import { mdiAutoFix, mdiFlipHorizontal, mdiFlipVertical, mdiRotateLeft, mdiRotateRight } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   interface AspectRatioOption {
@@ -137,5 +137,19 @@
         <span class="text-sm text-white">{ratio.label}</span>
       </HStack>
     {/each}
+    <HStack>
+      <Button
+        class="w-14 h-14 m-2"
+        shape="round"
+        color="secondary"
+        variant="outline"
+        loading={transformManager.isApplyingSmartCrop}
+        aria-label={$t('editor_smart_crop')}
+        onclick={() => transformManager.applySmartCrop()}
+      >
+        <Icon icon={mdiAutoFix} size="1.75em" />
+      </Button>
+      <span class="text-sm text-white">{$t('editor_smart_crop')}</span>
+    </HStack>
   </div>
 </div>
