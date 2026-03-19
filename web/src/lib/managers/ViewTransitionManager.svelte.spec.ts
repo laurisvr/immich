@@ -48,21 +48,34 @@ describe('ViewTransitionManager', () => {
   });
 
   describe('when a transition is already active', () => {
-    it('should skip the second transition', async () => {
-      let resolveFinished!: () => void;
-      const finished = new Promise<void>((resolve) => {
-        resolveFinished = resolve;
+    it('should skip the first transition and run the second', async () => {
+      let resolveFirstUpdate!: () => void;
+      const firstUpdateCallbackDone = new Promise<void>((resolve) => {
+        resolveFirstUpdate = resolve;
       });
-      let resolveUpdate!: () => void;
-      const updateCallbackDone = new Promise<void>((resolve) => {
-        resolveUpdate = resolve;
-      });
+      const firstFinished = new Promise<void>(() => {});
+      const firstSkipTransition = vi.fn();
 
+      let callCount = 0;
       // eslint-disable-next-line tscompat/tscompat
       document.startViewTransition = vi.fn().mockImplementation((arg: unknown) => {
+        callCount++;
         const updateFn = typeof arg === 'function' ? arg : (arg as { update: () => Promise<void> }).update;
         void updateFn();
-        return { updateCallbackDone, finished, ready: Promise.resolve(), skipTransition: vi.fn() };
+        if (callCount === 1) {
+          return {
+            updateCallbackDone: firstUpdateCallbackDone,
+            finished: firstFinished,
+            ready: Promise.resolve(),
+            skipTransition: firstSkipTransition,
+          };
+        }
+        return {
+          updateCallbackDone: Promise.resolve(),
+          finished: Promise.resolve(),
+          ready: Promise.resolve(),
+          skipTransition: vi.fn(),
+        };
       });
 
       const secondPerformUpdate = vi.fn().mockResolvedValue(undefined);
@@ -75,13 +88,13 @@ describe('ViewTransitionManager', () => {
       // Flush microtasks so the first transition reaches the startViewTransition call
       await new Promise<void>((r) => queueMicrotask(r));
 
-      // While first is active, try a second — should be skipped
+      // While first is active, start a second — should skip the first and proceed
       await manager.startTransition({ performUpdate: secondPerformUpdate });
-      expect(secondPerformUpdate).not.toHaveBeenCalled();
+      expect(firstSkipTransition).toHaveBeenCalledOnce();
+      expect(secondPerformUpdate).toHaveBeenCalledOnce();
 
-      // Clean up
-      resolveUpdate();
-      resolveFinished();
+      // Clean up first promise
+      resolveFirstUpdate();
       await firstPromise;
     });
   });

@@ -10,6 +10,7 @@ interface TransitionRequest {
 
 export class ViewTransitionManager {
   #activeViewTransition = $state<ViewTransition | null>(null);
+  #activeOnFinished: (() => void) | undefined;
 
   get activeViewTransition() {
     return this.#activeViewTransition;
@@ -23,6 +24,9 @@ export class ViewTransitionManager {
     const skipped = !!this.#activeViewTransition;
     this.#activeViewTransition?.skipTransition();
     this.#activeViewTransition = null;
+    const onFinished = this.#activeOnFinished;
+    this.#activeOnFinished = undefined;
+    onFinished?.();
     return skipped;
   }
 
@@ -34,7 +38,7 @@ export class ViewTransitionManager {
     onFinished,
   }: TransitionRequest) {
     if (this.#activeViewTransition) {
-      return;
+      this.skipTransitions();
     }
 
     if (!this.isSupported()) {
@@ -67,6 +71,7 @@ export class ViewTransitionManager {
     }
 
     this.#activeViewTransition = transition;
+    this.#activeOnFinished = onFinished;
 
     // eslint-disable-next-line tscompat/tscompat
     void transition.ready.catch((error: unknown) => {
@@ -85,8 +90,11 @@ export class ViewTransitionManager {
         }
       })
       .finally(() => {
-        this.#activeViewTransition = null;
-        onFinished?.();
+        if (this.#activeViewTransition === transition) {
+          this.#activeViewTransition = null;
+          this.#activeOnFinished = undefined;
+          onFinished?.();
+        }
       });
 
     // Wait only until the DOM update completes (both snapshots captured),
