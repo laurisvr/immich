@@ -27,6 +27,32 @@ export const getBoundingBox = (faces: Faces[], imageSize: Size): BoundingBox[] =
   return boxes;
 };
 
+export type FaceRectState = {
+  left: number;
+  top: number;
+  scaleX: number;
+  scaleY: number;
+};
+
+export type ResizeContext = Pick<ContentMetrics, 'contentWidth' | 'offsetX' | 'offsetY'>;
+
+export const scaleFaceRectOnResize = (
+  faceRect: FaceRectState,
+  previous: ResizeContext,
+  current: ResizeContext,
+): FaceRectState => {
+  const scale = current.contentWidth / previous.contentWidth;
+  const imageRelativeLeft = (faceRect.left - previous.offsetX) * scale;
+  const imageRelativeTop = (faceRect.top - previous.offsetY) * scale;
+
+  return {
+    left: current.offsetX + imageRelativeLeft,
+    top: current.offsetY + imageRelativeTop,
+    scaleX: faceRect.scaleX * scale,
+    scaleY: faceRect.scaleY * scale,
+  };
+};
+
 export const zoomImageToBase64 = async (
   face: AssetFaceResponseDto,
   assetId: string,

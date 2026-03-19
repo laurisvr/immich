@@ -149,7 +149,7 @@ test.describe('face-editor', () => {
     await expect(page.getByRole('dialog')).toBeVisible();
   });
 
-  test('Confirming tag calls createFace API and closes editor', async ({ page }) => {
+  test('Confirming tag calls createFace API with valid coordinates and closes editor', async ({ page }) => {
     const asset = selectRandom(fixture.assets, rng);
     await openFaceEditor(page, asset);
 
@@ -163,8 +163,15 @@ test.describe('face-editor', () => {
     await expect(page.locator('#face-editor')).toBeHidden();
 
     expect(faceCreateCapture.requests).toHaveLength(1);
-    expect(faceCreateCapture.requests[0].assetId).toBe(asset.id);
-    expect(faceCreateCapture.requests[0].personId).toBe(personToTag.id);
+    const request = faceCreateCapture.requests[0];
+    expect(request.assetId).toBe(asset.id);
+    expect(request.personId).toBe(personToTag.id);
+    expect(request.x).toBeGreaterThanOrEqual(0);
+    expect(request.y).toBeGreaterThanOrEqual(0);
+    expect(request.width).toBeGreaterThan(0);
+    expect(request.height).toBeGreaterThan(0);
+    expect(request.x + request.width).toBeLessThanOrEqual(request.imageWidth);
+    expect(request.y + request.height).toBeLessThanOrEqual(request.imageHeight);
   });
 
   test('Cancel button closes face editor', async ({ page }) => {
@@ -281,5 +288,40 @@ test.describe('face-editor', () => {
 
     expect(afterDrag.left).toBeGreaterThan(beforeDrag.left + 50);
     expect(afterDrag.top).toBeGreaterThan(beforeDrag.top + 20);
+  });
+
+  test('Cancel on confirmation dialog keeps face editor open', async ({ page }) => {
+    const asset = selectRandom(fixture.assets, rng);
+    await openFaceEditor(page, asset);
+
+    const personToTag = mockPeople[0];
+    await page.locator('#face-selector').getByText(personToTag.name).click();
+
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: /cancel/i })
+      .click();
+
+    await expect(page.getByRole('dialog')).toBeHidden();
+    await expect(page.locator('#face-selector')).toBeVisible();
+    await expect(page.locator('#face-editor')).toBeVisible();
+    expect(faceCreateCapture.requests).toHaveLength(0);
+  });
+
+  test('Clicking on face rect center does not reposition it', async ({ page }) => {
+    const asset = selectRandom(fixture.assets, rng);
+    await openFaceEditor(page, asset);
+
+    const beforeClick = await getFaceBoxRect(page);
+    const centerX = beforeClick.left + beforeClick.width / 2;
+    const centerY = beforeClick.top + beforeClick.height / 2;
+
+    await page.mouse.click(centerX, centerY);
+    await page.waitForTimeout(300);
+
+    const afterClick = await getFaceBoxRect(page);
+    expect(Math.abs(afterClick.left - beforeClick.left)).toBeLessThan(3);
+    expect(Math.abs(afterClick.top - beforeClick.top)).toBeLessThan(3);
   });
 });
