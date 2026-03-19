@@ -23,6 +23,8 @@
     onError?: () => void;
     ref?: HTMLDivElement;
     imgRef?: HTMLImageElement;
+    imgNaturalSize?: Size;
+    imgScaledSize?: Size;
     backdrop?: Snippet;
     overlays?: Snippet;
   };
@@ -31,6 +33,10 @@
     ref = $bindable(),
     // eslint-disable-next-line no-useless-assignment
     imgRef = $bindable(),
+    // eslint-disable-next-line no-useless-assignment
+    imgNaturalSize = $bindable(),
+    // eslint-disable-next-line no-useless-assignment
+    imgScaledSize = $bindable(),
     asset,
     sharedLink,
     objectFit = 'contain',
@@ -98,9 +104,21 @@
     return { width: 1, height: 1 };
   });
 
-  const { width, height, left, top } = $derived.by(() => {
+  $effect(() => {
+    imgNaturalSize = imageDimensions;
+  });
+
+  const scaledDimensions = $derived.by(() => {
     const scaleFn = objectFit === 'cover' ? scaleToCover : scaleToFit;
-    const { width, height } = scaleFn(imageDimensions, container);
+    return scaleFn(imageDimensions, container);
+  });
+
+  $effect(() => {
+    imgScaledSize = scaledDimensions;
+  });
+
+  const { width, height, left, top } = $derived.by(() => {
+    const { width, height } = scaledDimensions;
     return {
       width: width + 'px',
       height: height + 'px',

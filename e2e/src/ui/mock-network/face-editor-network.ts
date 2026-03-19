@@ -1,5 +1,6 @@
+import type { AssetFaceResponseDto, AssetResponseDto, PersonWithFacesResponseDto, SourceType } from '@immich/sdk';
 import { BrowserContext } from '@playwright/test';
-import { randomThumbnail } from 'src/ui/generators/timeline';
+import { type FaceData, randomThumbnail } from 'src/ui/generators/timeline';
 
 // Minimal valid H.264 MP4 (8x8px, 1 frame) that browsers can decode to get videoWidth/videoHeight
 const MINIMAL_MP4_BASE64 =
@@ -122,6 +123,87 @@ export const setupFaceEditorMockApiRoutes = async (
       status: 200,
       headers: { 'content-type': 'image/jpeg' },
       body: await randomThumbnail('person-thumb', 1),
+    });
+  });
+};
+
+export type MockFaceSpec = {
+  personId: string;
+  personName: string;
+  faceId: string;
+  boundingBoxX1: number;
+  boundingBoxY1: number;
+  boundingBoxX2: number;
+  boundingBoxY2: number;
+};
+
+const toPersonResponseDto = (spec: MockFaceSpec) => ({
+  id: spec.personId,
+  name: spec.personName,
+  birthDate: null,
+  isHidden: false,
+  thumbnailPath: `/upload/thumbs/${spec.personId}.jpeg`,
+  updatedAt: '2025-01-01T00:00:00.000Z',
+});
+
+const toBoundingBox = (spec: MockFaceSpec, imageWidth: number, imageHeight: number) => ({
+  id: spec.faceId,
+  imageWidth,
+  imageHeight,
+  boundingBoxX1: spec.boundingBoxX1,
+  boundingBoxY1: spec.boundingBoxY1,
+  boundingBoxX2: spec.boundingBoxX2,
+  boundingBoxY2: spec.boundingBoxY2,
+});
+
+export const createMockFaceData = (specs: MockFaceSpec[], imageWidth: number, imageHeight: number): FaceData => {
+  const people: PersonWithFacesResponseDto[] = specs.map((spec) => ({
+    ...toPersonResponseDto(spec),
+    faces: [toBoundingBox(spec, imageWidth, imageHeight)],
+  }));
+
+  return { people, unassignedFaces: [] };
+};
+
+export const createMockAssetFaces = (
+  specs: MockFaceSpec[],
+  imageWidth: number,
+  imageHeight: number,
+): AssetFaceResponseDto[] => {
+  return specs.map((spec) => ({
+    ...toBoundingBox(spec, imageWidth, imageHeight),
+    person: toPersonResponseDto(spec),
+    sourceType: 'machine-learning' as SourceType,
+  }));
+};
+
+export const setupGetFacesMockApiRoute = async (context: BrowserContext, faces: AssetFaceResponseDto[]) => {
+  await context.route('**/api/faces?*', async (route, request) => {
+    if (request.method() !== 'GET') {
+      return route.fallback();
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      json: faces,
+    });
+  });
+};
+
+export const setupFaceOverlayMockApiRoutes = async (context: BrowserContext, assetDto: AssetResponseDto) => {
+  await context.route('**/api/assets/*', async (route, request) => {
+    if (request.method() !== 'GET') {
+      return route.fallback();
+    }
+    const url = new URL(request.url());
+    const assetId = url.pathname.split('/').at(-1);
+    if (assetId !== assetDto.id) {
+      return route.fallback();
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      json: assetDto,
     });
   });
 };

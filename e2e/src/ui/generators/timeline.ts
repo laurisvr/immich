@@ -20,7 +20,7 @@ export {
   toColumnarFormat,
 } from './timeline/rest-response';
 
-export type { Changes } from './timeline/rest-response';
+export type { Changes, FaceData } from './timeline/rest-response';
 
 export { randomImage, randomImageFromString, randomPreview, randomThumbnail } from './timeline/images';
 

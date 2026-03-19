@@ -1,6 +1,9 @@
 import {
+  computeContentMetrics,
   getContentMetrics,
   getNaturalSize,
+  mapContentRectToNatural,
+  mapContentToNatural,
   mapNormalizedRectToContent,
   mapNormalizedToContent,
   scaleToCover,
@@ -123,6 +126,53 @@ describe('scaleToCover', () => {
   });
 });
 
+describe('computeContentMetrics', () => {
+  it('should compute metrics with scaleToFit by default', () => {
+    expect(computeContentMetrics({ width: 2000, height: 1000 }, { width: 800, height: 600 })).toEqual({
+      contentWidth: 800,
+      contentHeight: 400,
+      offsetX: 0,
+      offsetY: 100,
+    });
+  });
+
+  it('should accept scaleToCover as scale function', () => {
+    expect(computeContentMetrics({ width: 2000, height: 1000 }, { width: 800, height: 600 }, scaleToCover)).toEqual({
+      contentWidth: 1200,
+      contentHeight: 600,
+      offsetX: -200,
+      offsetY: 0,
+    });
+  });
+
+  it('should compute zero offsets when aspect ratios match', () => {
+    expect(computeContentMetrics({ width: 1600, height: 900 }, { width: 800, height: 450 })).toEqual({
+      contentWidth: 800,
+      contentHeight: 450,
+      offsetX: 0,
+      offsetY: 0,
+    });
+  });
+});
+
+// Coordinate space glossary:
+//
+// "Normalized" coordinates: values in the 0–1 range, where (0,0) is the top-left
+// of the image and (1,1) is the bottom-right. Resolution-independent.
+//
+// "Content" coordinates: pixel positions within the container, after the image
+// has been scaled (scaleToFit/scaleToCover) and offset (centered). This is what
+// CSS and DOM layout use for positioning overlays like face boxes and OCR text.
+//
+// "Natural" coordinates: pixel positions in the original image file at its full
+// resolution (e.g. 4000×3000). Used when cropping or drawing on the source image.
+//
+// "Metadata pixel space": the coordinate system used by face detection / OCR
+// models, where positions are in pixels relative to the image dimensions stored
+// in metadata (face.imageWidth/imageHeight). These may differ from the natural
+// dimensions if the image was resized. To convert to normalized, divide by
+// the metadata dimensions (e.g. face.boundingBoxX1 / face.imageWidth).
+
 describe('mapNormalizedToContent', () => {
   const metrics = { contentWidth: 800, contentHeight: 400, offsetX: 0, offsetY: 100 };
 
@@ -152,6 +202,31 @@ describe('mapNormalizedToContent', () => {
   });
 });
 
+describe('mapContentToNatural', () => {
+  const metrics = { contentWidth: 800, contentHeight: 400, offsetX: 0, offsetY: 100 };
+  const natural = { width: 4000, height: 2000 };
+
+  it('should map content origin to natural origin', () => {
+    expect(mapContentToNatural({ x: 0, y: 100 }, metrics, natural)).toEqual({ x: 0, y: 0 });
+  });
+
+  it('should map content bottom-right to natural bottom-right', () => {
+    expect(mapContentToNatural({ x: 800, y: 500 }, metrics, natural)).toEqual({ x: 4000, y: 2000 });
+  });
+
+  it('should map content center to natural center', () => {
+    expect(mapContentToNatural({ x: 400, y: 300 }, metrics, natural)).toEqual({ x: 2000, y: 1000 });
+  });
+
+  it('should be the inverse of mapNormalizedToContent', () => {
+    const normalized = { x: 0.3, y: 0.7 };
+    const contentPoint = mapNormalizedToContent(normalized, metrics);
+    const naturalPoint = mapContentToNatural(contentPoint, metrics, natural);
+    expect(naturalPoint.x).toBeCloseTo(normalized.x * natural.width);
+    expect(naturalPoint.y).toBeCloseTo(normalized.y * natural.height);
+  });
+});
+
 describe('mapNormalizedRectToContent', () => {
   const metrics = { contentWidth: 800, contentHeight: 400, offsetX: 0, offsetY: 100 };
 
@@ -175,5 +250,30 @@ describe('mapNormalizedRectToContent', () => {
     const size = { width: 800, height: 400 };
     const rect = mapNormalizedRectToContent({ x: 0.25, y: 0.25 }, { x: 0.75, y: 0.75 }, size);
     expect(rect).toEqual({ left: 200, top: 100, width: 400, height: 200 });
+  });
+});
+
+describe('mapContentRectToNatural', () => {
+  const metrics = { contentWidth: 800, contentHeight: 400, offsetX: 0, offsetY: 100 };
+  const natural = { width: 4000, height: 2000 };
+
+  it('should map a content rect to natural image coordinates', () => {
+    const rect = mapContentRectToNatural({ left: 200, top: 200, width: 400, height: 200 }, metrics, natural);
+    expect(rect).toEqual({ left: 1000, top: 500, width: 2000, height: 1000 });
+  });
+
+  it('should map full content rect to full natural dimensions', () => {
+    const rect = mapContentRectToNatural({ left: 0, top: 100, width: 800, height: 400 }, metrics, natural);
+    expect(rect).toEqual({ left: 0, top: 0, width: 4000, height: 2000 });
+  });
+
+  it('should be the inverse of mapNormalizedRectToContent', () => {
+    const normalized = { topLeft: { x: 0.2, y: 0.3 }, bottomRight: { x: 0.8, y: 0.9 } };
+    const contentRect = mapNormalizedRectToContent(normalized.topLeft, normalized.bottomRight, metrics);
+    const naturalRect = mapContentRectToNatural(contentRect, metrics, natural);
+    expect(naturalRect.left).toBeCloseTo(normalized.topLeft.x * natural.width);
+    expect(naturalRect.top).toBeCloseTo(normalized.topLeft.y * natural.height);
+    expect(naturalRect.width).toBeCloseTo((normalized.bottomRight.x - normalized.topLeft.x) * natural.width);
+    expect(naturalRect.height).toBeCloseTo((normalized.bottomRight.y - normalized.topLeft.y) * natural.height);
   });
 });
