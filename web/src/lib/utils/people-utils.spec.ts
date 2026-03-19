@@ -1,6 +1,6 @@
 import type { Faces } from '$lib/stores/people.store';
 import type { Size } from '$lib/utils/container-utils';
-import { getBoundingBox } from '$lib/utils/people-utils';
+import { getBoundingBox, scaleFaceRectOnResize, type FaceRectState, type ResizeContext } from '$lib/utils/people-utils';
 
 const makeFace = (overrides: Partial<Faces> = {}): Faces => ({
   id: 'face-1',
@@ -66,5 +66,98 @@ describe('getBoundingBox', () => {
 
     expect(boxes).toHaveLength(2);
     expect(boxes[0].left).toBeLessThan(boxes[1].left);
+  });
+});
+
+describe('scaleFaceRectOnResize', () => {
+  const makeRect = (overrides: Partial<FaceRectState> = {}): FaceRectState => ({
+    left: 300,
+    top: 400,
+    scaleX: 1,
+    scaleY: 1,
+    ...overrides,
+  });
+
+  const makePrevious = (overrides: Partial<ResizeContext> = {}): ResizeContext => ({
+    offsetX: 100,
+    offsetY: 50,
+    contentWidth: 800,
+    ...overrides,
+  });
+
+  it('should preserve relative position when container doubles in size', () => {
+    const rect = makeRect({ left: 300, top: 250 });
+    const previous = makePrevious({ offsetX: 100, offsetY: 50, contentWidth: 800 });
+
+    const result = scaleFaceRectOnResize(rect, previous, { offsetX: 200, offsetY: 100, contentWidth: 1600 });
+
+    // imageRelLeft = (300 - 100) * 2 = 400, new left = 200 + 400 = 600
+    // imageRelTop = (250 - 50) * 2 = 400, new top = 100 + 400 = 500
+    expect(result.left).toBe(600);
+    expect(result.top).toBe(500);
+    expect(result.scaleX).toBe(2);
+    expect(result.scaleY).toBe(2);
+  });
+
+  it('should preserve relative position when container halves in size', () => {
+    const rect = makeRect({ left: 300, top: 250 });
+    const previous = makePrevious({ offsetX: 100, offsetY: 50, contentWidth: 800 });
+
+    const result = scaleFaceRectOnResize(rect, previous, { offsetX: 50, offsetY: 25, contentWidth: 400 });
+
+    // imageRelLeft = (300 - 100) * 0.5 = 100, new left = 50 + 100 = 150
+    // imageRelTop = (250 - 50) * 0.5 = 100, new top = 25 + 100 = 125
+    expect(result.left).toBe(150);
+    expect(result.top).toBe(125);
+    expect(result.scaleX).toBe(0.5);
+    expect(result.scaleY).toBe(0.5);
+  });
+
+  it('should handle no change in dimensions', () => {
+    const rect = makeRect({ left: 300, top: 250, scaleX: 1.5, scaleY: 1.5 });
+    const previous = makePrevious({ offsetX: 100, offsetY: 50, contentWidth: 800 });
+
+    const result = scaleFaceRectOnResize(rect, previous, { offsetX: 100, offsetY: 50, contentWidth: 800 });
+
+    expect(result.left).toBe(300);
+    expect(result.top).toBe(250);
+    expect(result.scaleX).toBe(1.5);
+    expect(result.scaleY).toBe(1.5);
+  });
+
+  it('should handle offset changes without content width change', () => {
+    const rect = makeRect({ left: 300, top: 250 });
+    const previous = makePrevious({ offsetX: 100, offsetY: 50, contentWidth: 800 });
+
+    const result = scaleFaceRectOnResize(rect, previous, { offsetX: 150, offsetY: 75, contentWidth: 800 });
+
+    // scale = 1, imageRelLeft = 200, imageRelTop = 200
+    // new left = 150 + 200 = 350, new top = 75 + 200 = 275
+    expect(result.left).toBe(350);
+    expect(result.top).toBe(275);
+    expect(result.scaleX).toBe(1);
+    expect(result.scaleY).toBe(1);
+  });
+
+  it('should compound existing scale factors', () => {
+    const rect = makeRect({ left: 300, top: 250, scaleX: 2, scaleY: 3 });
+    const previous = makePrevious({ contentWidth: 800 });
+
+    const result = scaleFaceRectOnResize(rect, previous, { ...previous, contentWidth: 1600 });
+
+    expect(result.scaleX).toBe(4);
+    expect(result.scaleY).toBe(6);
+  });
+
+  it('should handle rect at image origin (top-left of content area)', () => {
+    const rect = makeRect({ left: 100, top: 50 });
+    const previous = makePrevious({ offsetX: 100, offsetY: 50, contentWidth: 800 });
+
+    const result = scaleFaceRectOnResize(rect, previous, { offsetX: 200, offsetY: 100, contentWidth: 1600 });
+
+    // imageRelLeft = (100 - 100) * 2 = 0, new left = 200
+    // imageRelTop = (50 - 50) * 2 = 0, new top = 100
+    expect(result.left).toBe(200);
+    expect(result.top).toBe(100);
   });
 });

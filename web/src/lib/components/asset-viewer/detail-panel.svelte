@@ -7,6 +7,7 @@
   import { timeToLoadTheMap } from '$lib/constants';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import AssetChangeDateModal from '$lib/modals/AssetChangeDateModal.svelte';
   import { Route } from '$lib/route';
@@ -122,6 +123,7 @@
 
   const handleRefreshPeople = async () => {
     asset = await getAssetInfo({ id: asset.id });
+    eventManager.emit('AssetUpdate', asset);
     showEditFaces = false;
   };
 
@@ -233,8 +235,8 @@
               href={Route.viewPerson(person, { previousRoute })}
               onfocus={() => ($boundingBoxesArray = people[index].faces)}
               onblur={() => ($boundingBoxesArray = [])}
-              onmouseover={() => ($boundingBoxesArray = people[index].faces)}
-              onmouseleave={() => ($boundingBoxesArray = [])}
+              onpointerover={() => ($boundingBoxesArray = people[index].faces)}
+              onpointerleave={() => ($boundingBoxesArray = [])}
             >
               <div class="relative">
                 <ImageThumbnail

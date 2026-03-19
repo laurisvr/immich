@@ -11,6 +11,7 @@
     videoViewerVolume,
   } from '$lib/stores/preferences.store';
   import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
+  import type { Size } from '$lib/utils/container-utils';
   import { AssetMediaSize } from '@immich/sdk';
   import { LoadingSpinner } from '@immich/ui';
   import { onDestroy, onMount } from 'svelte';
@@ -19,6 +20,7 @@
 
   interface Props {
     assetId: string;
+    imageSize: Size;
     loopVideo: boolean;
     cacheKey: string | null;
     playOriginalVideo: boolean;
@@ -31,6 +33,7 @@
 
   let {
     assetId,
+    imageSize,
     loopVideo,
     cacheKey,
     playOriginalVideo,
@@ -173,7 +176,7 @@
       {/if}
 
       {#if isFaceEditMode.value}
-        <FaceEditor htmlElement={videoPlayer} {containerWidth} {containerHeight} {assetId} />
+        <FaceEditor {imageSize} {containerWidth} {containerHeight} {assetId} />
       {/if}
     {/if}
   </div>
