@@ -30,6 +30,7 @@
   import { preferences } from '$lib/stores/user.store';
   import { getAssetMediaUrl, handlePromiseError, memoryLaneTitle } from '$lib/utils';
   import { cancelMultiselect } from '$lib/utils/asset-utils';
+  import { navigateToTimeline } from '$lib/utils/transition-utils';
   import { fromISODateTimeUTC, toTimelineAsset } from '$lib/utils/timeline-util';
   import { AssetMediaSize, AssetTypeEnum, getAssetInfo } from '@immich/sdk';
   import { ActionButton, IconButton, toastManager } from '@immich/ui';
@@ -224,6 +225,20 @@
   const handleGalleryScrollsIntoView = () => {
     galleryInView = true;
     handlePromiseError(handleAction('galleryInView', 'pause'));
+  };
+
+  let memoryTransitionName = $state<string | undefined>(undefined);
+
+  const viewInTimeline = (assetId: string) => {
+    navigateToTimeline(assetId, {
+      types: ['memory-enter'],
+      prepareOldSnapshot: () => {
+        memoryTransitionName = 'hero';
+      },
+      onFinished: () => {
+        memoryTransitionName = undefined;
+      },
+    });
   };
 
   const handleGalleryScrollsOutOfView = () => {
@@ -505,7 +520,11 @@
                   videoViewerVolume={$videoViewerVolume}
                 />
               {:else}
-                <MemoryPhotoViewer asset={current.asset} onImageLoad={resetAndPlay} />
+                <MemoryPhotoViewer
+                  asset={current.asset}
+                  onImageLoad={resetAndPlay}
+                  transitionName={memoryTransitionName}
+                />
               {/if}
             {/key}
 
@@ -560,6 +579,10 @@
                       color="secondary"
                       variant="ghost"
                       shape="round"
+                      onclick={(event: MouseEvent) => {
+                        event.preventDefault();
+                        viewInTimeline(asset.stack?.primaryAssetId ?? asset.id);
+                      }}
                     />
                   {/if}
                 {/await}

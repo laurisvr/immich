@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { page } from '$app/state';
   import ActionMenuItem from '$lib/components/ActionMenuItem.svelte';
   import type { OnAction, PreAction } from '$lib/components/asset-viewer/actions/action';
   import AddToStackAction from '$lib/components/asset-viewer/actions/add-to-stack-action.svelte';
@@ -17,16 +18,19 @@
   import UnstackAction from '$lib/components/asset-viewer/actions/unstack-action.svelte';
   import ButtonContextMenu from '$lib/components/shared-components/context-menu/button-context-menu.svelte';
   import MenuOption from '$lib/components/shared-components/context-menu/menu-option.svelte';
+  import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { languageManager } from '$lib/managers/language-manager.svelte';
   import { viewTransitionManager } from '$lib/managers/ViewTransitionManager.svelte';
   import { Route } from '$lib/route';
+  import { navigateToTimeline } from '$lib/utils/transition-utils';
   import { getGlobalActions } from '$lib/services/app.service';
   import { getAssetActions } from '$lib/services/asset.service';
   import { isFaceEditMode } from '$lib/stores/face-edit.svelte';
   import { user } from '$lib/stores/user.store';
   import { getSharedLink, withoutIcons } from '$lib/utils';
   import type { OnUndoDelete } from '$lib/utils/actions';
+  import { isPhotosRoute } from '$lib/utils/navigation';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import {
     AssetTypeEnum,
@@ -185,10 +189,19 @@
             {#if !asset.isArchived && !asset.isTrashed}
               <MenuOption
                 icon={mdiImageSearch}
-                onClick={() => {
-                  void viewTransitionManager.startTransition({
-                    types: ['viewer'],
-                    performUpdate: () => goto(Route.photos({ at: stack?.primaryAssetId ?? asset.id })),
+                onClick={async () => {
+                  const assetId = stack?.primaryAssetId ?? asset.id;
+                  if (isPhotosRoute(page.route.id) && viewTransitionManager.isSupported()) {
+                    const transitionReady = eventManager.untilNext('ViewerCloseTransitionReady');
+                    eventManager.emit('ViewerCloseTransition', { id: assetId });
+                    await transitionReady;
+                    await goto(Route.photos({ at: assetId }));
+                    return;
+                  }
+
+                  navigateToTimeline(assetId, {
+                    types: ['timeline'],
+                    prepareOldSnapshot: () => eventManager.emit('ViewerOpenTransition'),
                   });
                 }}
                 text={$t('view_in_timeline')}

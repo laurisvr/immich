@@ -218,11 +218,14 @@
       scrolled = await scrollAndLoadAsset(scrollTarget);
     }
     if (!scrolled) {
-      // if the asset is not found, scroll to the top
       timelineManager.scrollTo(0);
+      if (scrollTarget) {
+        eventManager.emit('TimelineScrolledToAsset', { id: scrollTarget });
+      }
     } else if (scrollTarget) {
       await tick();
       focusAsset(scrollTarget);
+      eventManager.emit('TimelineScrolledToAsset', { id: scrollTarget });
     }
     invisible = isAssetViewerRoute(page) ? true : false;
   };

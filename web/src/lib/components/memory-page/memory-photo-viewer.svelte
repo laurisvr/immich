@@ -11,9 +11,10 @@
   interface Props {
     asset: TimelineAsset;
     onImageLoad: () => void;
+    transitionName?: string;
   }
 
-  const { asset, onImageLoad }: Props = $props();
+  const { asset, onImageLoad, transitionName }: Props = $props();
 
   let assetFileUrl: string = $state('');
   let imageLoaded: boolean = $state(false);
@@ -52,6 +53,7 @@
       src={assetFileUrl}
       alt={$getAltText(asset)}
       draggable="false"
+      style:view-transition-name={transitionName}
     />
   </div>
 {/if}

@@ -1,5 +1,7 @@
+import { goto } from '$app/navigation';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { viewTransitionManager } from '$lib/managers/ViewTransitionManager.svelte';
+import { Route } from '$lib/route';
 import { tick } from 'svelte';
 
 export function startViewerTransition(
@@ -30,6 +32,64 @@ export function removeCrossfadeOverlay() {
     activeOverlay.remove();
     activeOverlay = undefined;
   }
+}
+
+export function navigateToTimeline(
+  assetId: string,
+  options: { types: string[]; prepareOldSnapshot?: () => void; onFinished?: () => void },
+) {
+  let heroOverlay: HTMLElement | null = null;
+  let hiddenElement: HTMLElement | null = null;
+
+  void viewTransitionManager.startTransition({
+    types: options.types,
+    prepareOldSnapshot: options.prepareOldSnapshot,
+    performUpdate: async () => {
+      const scrolled = eventManager.untilNext('TimelineScrolledToAsset');
+      await goto(Route.photos({ at: assetId }));
+      await scrolled;
+      await tick();
+
+      const element = document.querySelector<HTMLElement>(`[data-asset-id="${CSS.escape(assetId)}"]`);
+      if (!element) {
+        return;
+      }
+
+      const rect = element.getBoundingClientRect();
+      const img = element.querySelector('img');
+
+      hiddenElement = element;
+      element.style.visibility = 'hidden';
+
+      heroOverlay = document.createElement('div');
+      heroOverlay.style.cssText = `
+        position: fixed;
+        top: ${rect.top}px;
+        left: ${rect.left}px;
+        width: ${rect.width}px;
+        height: ${rect.height}px;
+        view-transition-name: hero;
+        pointer-events: none;
+        z-index: -1;
+        overflow: hidden;
+      `;
+      if (img?.src) {
+        heroOverlay.style.backgroundImage = `url("${CSS.escape(img.src)}")`;
+        heroOverlay.style.backgroundSize = 'cover';
+        heroOverlay.style.backgroundPosition = 'center';
+      }
+      document.body.append(heroOverlay);
+    },
+    onFinished: () => {
+      heroOverlay?.remove();
+      heroOverlay = null;
+      if (hiddenElement) {
+        hiddenElement.style.visibility = '';
+        hiddenElement = null;
+      }
+      options.onFinished?.();
+    },
+  });
 }
 
 export async function crossfadeViewerContent(updateFn: () => void | Promise<void>, duration = 200) {
