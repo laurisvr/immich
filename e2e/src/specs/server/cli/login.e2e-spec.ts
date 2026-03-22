@@ -1,6 +1,6 @@
 import { Permission } from '@immich/sdk';
 import { stat } from 'node:fs/promises';
-import { app, immichCli, utils } from 'src/utils';
+import { app, baseUrl, immichCli, utils } from 'src/utils';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 describe(`immich login`, () => {
@@ -33,7 +33,7 @@ describe(`immich login`, () => {
     const key = await utils.createApiKey(admin.accessToken, [Permission.All]);
     const { stdout, stderr, exitCode } = await immichCli(['login', app, `${key.secret}`]);
     expect(stdout.split('\n')).toEqual([
-      'Logging in to http://127.0.0.1:2285/api',
+      `Logging in to ${baseUrl}/api`,
       'Logged in as admin@immich.cloud',
       'Wrote auth info to /tmp/immich/auth.yml',
     ]);
@@ -50,8 +50,8 @@ describe(`immich login`, () => {
     const key = await utils.createApiKey(admin.accessToken, [Permission.All]);
     const { stdout, stderr, exitCode } = await immichCli(['login', app.replaceAll('/api', ''), `${key.secret}`]);
     expect(stdout.split('\n')).toEqual([
-      'Logging in to http://127.0.0.1:2285',
-      'Discovered API at http://127.0.0.1:2285/api',
+      `Logging in to ${baseUrl}`,
+      `Discovered API at ${baseUrl}/api`,
       'Logged in as admin@immich.cloud',
       'Wrote auth info to /tmp/immich/auth.yml',
     ]);

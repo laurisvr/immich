@@ -1,0 +1,40 @@
+FROM node:22-bookworm-slim
+
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+
+RUN corepack enable && corepack prepare pnpm@10.30.3 --activate
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    docker.io \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .pnpmfile.cjs ./
+COPY open-api/typescript-sdk/package.json open-api/typescript-sdk/
+COPY cli/package.json cli/
+COPY web/package.json web/
+COPY e2e/package.json e2e/
+COPY e2e-auth-server/package.json e2e-auth-server/
+
+RUN pnpm install --frozen-lockfile
+
+COPY open-api/typescript-sdk/ open-api/typescript-sdk/
+RUN pnpm --filter @immich/sdk build
+
+COPY cli/ cli/
+RUN pnpm --filter @immich/cli build && ln -s /app/cli/bin/immich /app/cli/node_modules/.bin/immich
+
+COPY web/svelte.config.js web/vite.config.ts web/tsconfig.json web/
+COPY web/src/ web/src/
+COPY web/static/ web/static/
+RUN pnpm --filter immich-web exec svelte-kit sync
+
+COPY e2e/ e2e/
+COPY e2e-auth-server/ e2e-auth-server/
+
+RUN pnpm --filter immich-e2e exec playwright install --with-deps chromium
+
+WORKDIR /app/e2e

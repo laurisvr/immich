@@ -71,6 +71,7 @@ const setup = async () => {
   const redirectUris = [
     'http://127.0.0.1:2285/auth/login',
     'https://photos.immich.app/oauth/mobile-redirect',
+    ...(process.env.EXTRA_REDIRECT_URIS?.split(',').filter(Boolean) ?? []),
   ];
   const port = 2286;
   const host = '0.0.0.0';

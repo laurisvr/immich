@@ -5,6 +5,8 @@ services:
     container_name: immich-e2e-auth-server
     build:
       context: ../e2e-auth-server
+    environment:
+      EXTRA_REDIRECT_URIS: http://immich-server:2285/auth/login
     ports:
       - 2286:2286
 
@@ -65,3 +67,29 @@ services:
       timeout: 5s
       retries: 30
       start_period: 10s
+
+  e2e-runner:
+    container_name: immich-e2e-runner
+    build:
+      context: ../
+      dockerfile: e2e/Dockerfile.playwright
+    environment:
+      PLAYWRIGHT_HOST: immich-server
+      PLAYWRIGHT_DB_HOST: database
+      PLAYWRIGHT_DB_PORT: '5432'
+      PLAYWRIGHT_BASE_URL: http://immich-server:2285
+      PLAYWRIGHT_DISABLE_WEBSERVER: 'true'
+      PLAYWRIGHT_AUTH_SERVER_URL: http://e2e-auth-server:2286
+      VITEST_DISABLE_DOCKER_SETUP: 'true'
+      CI: '${CI:-}'
+    volumes:
+      - ./test-assets:/app/e2e/test-assets
+      - ./playwright-report:/app/e2e/playwright-report
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      immich-server:
+        condition: service_started
+      database:
+        condition: service_healthy
+    profiles:
+      - test

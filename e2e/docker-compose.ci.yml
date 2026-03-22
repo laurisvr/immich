@@ -1,0 +1,23 @@
+name: immich-e2e
+
+services:
+  immich-server:
+    build:
+      cache_from:
+        - type=gha,scope=e2e-server-${RUNNER_ARCH:-X64}
+      cache_to:
+        - type=gha,mode=max,scope=e2e-server-${RUNNER_ARCH:-X64}
+
+  e2e-auth-server:
+    build:
+      cache_from:
+        - type=gha,scope=e2e-auth-${RUNNER_ARCH:-X64}
+      cache_to:
+        - type=gha,mode=max,scope=e2e-auth-${RUNNER_ARCH:-X64}
+
+  e2e-runner:
+    build:
+      cache_from:
+        - type=gha,scope=e2e-runner-${RUNNER_ARCH:-X64}
+      cache_to:
+        - type=gha,mode=max,scope=e2e-runner-${RUNNER_ARCH:-X64}

@@ -15,7 +15,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 const authServer = {
   internal: 'http://e2e-auth-server:2286',
-  external: 'http://127.0.0.1:2286',
+  external: process.env.PLAYWRIGHT_AUTH_SERVER_URL ?? 'http://127.0.0.1:2286',
 };
 
 const mobileOverrideRedirectUri = 'https://photos.immich.app/oauth/mobile-redirect';

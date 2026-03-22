@@ -24,7 +24,7 @@ e2e-update:
 	@trap 'make e2e-down' EXIT; COMPOSE_BAKE=true docker compose -f ./e2e/docker-compose.yml up --build -V --remove-orphans
 
 e2e-down:
-	docker compose -f ./e2e/docker-compose.yml down --remove-orphans
+	docker compose -f ./e2e/docker-compose.yml --profile test down --remove-orphans
 
 prod:
 	@trap 'make prod-down' EXIT; COMPOSE_BAKE=true docker compose -f ./docker/docker-compose.prod.yml up --build -V --remove-orphans
@@ -101,10 +101,30 @@ check-web:
 	pnpm --filter immich-web run check:svelte
 test-%:
 	pnpm --filter $(call map-package,$*) run test
-test-e2e:
-	docker compose -f ./e2e/docker-compose.yml build
-	pnpm --filter immich-e2e run test
-	pnpm --filter immich-e2e run test:web
+test-e2e: build-e2e test-e2e-server test-e2e-server-maintenance test-e2e-web test-e2e-web-ui test-e2e-web-maintenance
+
+test-e2e-server:
+	docker compose -f ./e2e/docker-compose.yml up -d --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
+	docker compose -f ./e2e/docker-compose.yml --profile test run --rm e2e-runner pnpm test
+
+test-e2e-server-maintenance:
+	docker compose -f ./e2e/docker-compose.yml up -d --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
+	docker compose -f ./e2e/docker-compose.yml --profile test run --rm e2e-runner pnpm test:maintenance
+
+test-e2e-web:
+	docker compose -f ./e2e/docker-compose.yml up -d --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
+	docker compose -f ./e2e/docker-compose.yml --profile test run --rm e2e-runner pnpm test:web
+
+test-e2e-web-ui:
+	docker compose -f ./e2e/docker-compose.yml up -d --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
+	docker compose -f ./e2e/docker-compose.yml --profile test run --rm e2e-runner pnpm test:web:ui
+
+test-e2e-web-maintenance:
+	docker compose -f ./e2e/docker-compose.yml up -d --renew-anon-volumes --force-recreate --remove-orphans --wait --wait-timeout 300
+	docker compose -f ./e2e/docker-compose.yml --profile test run --rm e2e-runner pnpm test:web:maintenance
+
+build-e2e:
+	docker compose -f ./e2e/docker-compose.yml --profile test build
 test-medium:
 	docker run \
     --rm \
