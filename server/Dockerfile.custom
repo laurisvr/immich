@@ -1,0 +1,90 @@
+# Custom Immich server build (fork: description-embedding-search).
+#
+# Mirrors upstream server/Dockerfile but DROPS the `plugins` (mise/WASM) build
+# stage. The WASM core-plugin toolchain requires a heavy mise download and is
+# only used for optional workflow automation (album rules, etc.) that this
+# deployment does not use. At runtime the server's importFolder() swallows a
+# missing core-plugin folder with a warning (workflow-execution.service.ts), so
+# boot and all photo/search functionality are unaffected.
+#
+# Keep the base image digests and stage layout in sync with upstream
+# server/Dockerfile on each rebase (see scripts/rebase-immich.sh).
+
+FROM ghcr.io/immich-app/base-server-dev:202607211135@sha256:83c9ff3f7390111596a2dcd24a746c3f8618d58259dbc7aae36618d153462f18 AS builder
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
+  CI=1 \
+  COREPACK_HOME=/tmp \
+  PNPM_HOME=/buildcache/pnpm-store \
+  PATH="/buildcache/pnpm-store:$PATH"
+
+RUN npm install --global corepack@latest && \
+  corepack enable pnpm && \
+  pnpm config set store-dir "$PNPM_HOME"
+
+FROM builder AS server
+
+WORKDIR /usr/src/app
+COPY ./server ./server/
+COPY ./packages/sdk ./packages/sdk/
+COPY ./packages/plugin-sdk ./packages/plugin-sdk/
+RUN --mount=type=cache,id=pnpm-server,target=/buildcache/pnpm-store \
+  --mount=type=bind,source=package.json,target=package.json \
+  --mount=type=bind,source=.pnpmfile.cjs,target=.pnpmfile.cjs \
+  --mount=type=bind,source=pnpm-lock.yaml,target=pnpm-lock.yaml \
+  --mount=type=bind,source=pnpm-workspace.yaml,target=pnpm-workspace.yaml \
+  SHARP_IGNORE_GLOBAL_LIBVIPS=true pnpm --filter @immich/sdk --filter @immich/plugin-sdk --filter immich build && \
+  SHARP_FORCE_GLOBAL_LIBVIPS=true  pnpm --filter immich --prod --no-optional deploy /output/server-pruned
+
+FROM builder AS web
+
+ARG BUILD_ID
+ENV IMMICH_BUILD=${BUILD_ID}
+
+WORKDIR /usr/src/app
+COPY ./web ./web/
+COPY ./i18n ./i18n/
+COPY ./packages ./packages/
+RUN --mount=type=cache,id=pnpm-web,target=/buildcache/pnpm-store \
+  --mount=type=bind,source=package.json,target=package.json \
+  --mount=type=bind,source=.pnpmfile.cjs,target=.pnpmfile.cjs \
+  --mount=type=bind,source=pnpm-lock.yaml,target=pnpm-lock.yaml \
+  --mount=type=bind,source=pnpm-workspace.yaml,target=pnpm-workspace.yaml \
+  SHARP_IGNORE_GLOBAL_LIBVIPS=true pnpm --filter @immich/sdk --filter immich-web install --frozen-lockfile --force && \
+  pnpm --filter @immich/sdk --filter immich-web build
+
+FROM builder AS cli
+
+COPY ./packages ./packages/
+RUN --mount=type=cache,id=pnpm-cli,target=/buildcache/pnpm-store \
+  --mount=type=bind,source=package.json,target=package.json \
+  --mount=type=bind,source=.pnpmfile.cjs,target=.pnpmfile.cjs \
+  --mount=type=bind,source=pnpm-lock.yaml,target=pnpm-lock.yaml \
+  --mount=type=bind,source=pnpm-workspace.yaml,target=pnpm-workspace.yaml \
+  pnpm --filter @immich/sdk --filter @immich/cli install --frozen-lockfile && \
+  pnpm --filter @immich/sdk --filter @immich/cli build && \
+  pnpm --filter @immich/cli --prod --no-optional deploy /output/cli-pruned
+
+FROM ghcr.io/immich-app/base-server-prod:202607211135@sha256:ced131da7523544fe975cfd25abd67386e712e39496340b437cd95a08d0a18f3
+
+WORKDIR /usr/src/app
+ENV NODE_ENV=production \
+  NVIDIA_DRIVER_CAPABILITIES=all \
+  NVIDIA_VISIBLE_DEVICES=all
+
+COPY --from=server /output/server-pruned ./server
+COPY --from=web /usr/src/app/web/build /build/www
+COPY --from=cli /output/cli-pruned ./cli
+# NOTE: no core plugin — the mise/WASM `plugins` stage is intentionally omitted.
+# The server logs a single "Failed to import plugin" warning at boot and continues.
+RUN ln -s ../../cli/bin/immich server/bin/immich
+COPY LICENSE /licenses/LICENSE.txt
+COPY LICENSE /LICENSE
+
+ENV PATH="${PATH}:/usr/src/app/server/bin"
+
+VOLUME /data
+EXPOSE 2283
+ENTRYPOINT ["tini", "--", "/bin/bash", "-c"]
+CMD ["start.sh"]
+
+HEALTHCHECK CMD immich-healthcheck

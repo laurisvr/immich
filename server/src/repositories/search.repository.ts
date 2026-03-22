@@ -464,6 +464,142 @@ export class SearchRepository {
       .execute();
   }
 
+  private tagSearchProbes?: number;
+
+  async searchTags(options: SmartSearchOptions, query: string, limit: number): Promise<string[]> {
+    // Three scoring channels for tag matching, cheapest-first so the
+    // embedding channel never has to scan the whole table:
+    // 1. Literal match (btree on LOWER(tag) + trigram index): the query, one
+    //    of its words, or a multi-word run of it equals the tag, or the query
+    //    appears in the tag on word boundaries → strongest signal, IDF-weighted
+    // 2. Fuzzy match (Levenshtein against the distinct tags in tag_idf,
+    //    whole query only; distance ≤ 1, or ≤ 2 from 7 chars): an
+    //    edit-distance hit is treated as evidence, not a score — it halves
+    //    the tag's semantic distance. True typo corrections also embed close
+    //    to the query so they surface; coincidental near-words (a rare tag
+    //    "bekco" is distance 2 from "beach") embed far away and sink.
+    //    Deliberately not per-word: cross-lingual queries hit near-words in
+    //    the wrong language ("hond" is distance 1 from "hood") and would
+    //    drown out the embedding channel that handles them correctly.
+    // 3. LABSE embedding match (vchordrq ANN top-K): semantic fallback,
+    //    IDF- and word-count-weighted
+    //
+    // Literal matches always rank above embedding matches, but a literal
+    // match on a common tag like "indoor" ranks below a literal match on
+    // a rare tag like "Van Gogh" (via IDF weighting). tag_idf is a stale
+    // materialized view, so IDF joins are LEFT (missing tag → neutral 1.0)
+    // and only the fuzzy channel depends on it for matching.
+    //
+    // Visibility and all other DTO filters (dates, camera, location, people,
+    // favorites, ...) are applied through searchAssetBuilder, matching
+    // upstream searchSmart semantics.
+    const lowerQuery = query.toLowerCase().trim();
+    const queryWords = lowerQuery.split(/\s+/).filter(Boolean);
+    if (queryWords.length === 0) {
+      return [];
+    }
+    const words = [...new Set(queryWords)];
+    const ngrams = new Set<string>();
+    for (let n = 2; n <= queryWords.length; n++) {
+      for (let i = 0; i + n <= queryWords.length; i++) {
+        ngrams.add(queryWords.slice(i, i + n).join(' '));
+      }
+    }
+    // Word-boundary regex so "cat" matches the tag "black cat" but not "scatter"
+    const boundaryPattern = String.raw`\m${lowerQuery.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`)}\M`;
+    // The ANN channel is a global top-K; rows outside the filtered asset set
+    // are discarded afterwards, so overfetch relative to the requested limit.
+    const annLimit = Math.min(Math.max(1024, limit * 8), 8192);
+    const filtered = searchAssetBuilder(this.db, {
+      ...options,
+      withExif: false,
+      withFaces: false,
+      withPeople: false,
+    }).select('asset.id');
+
+    return this.db.transaction().execute(async (trx) => {
+      await sql`set local vchordrq.probes = ${sql.lit(await this.getTagSearchProbes())}`.execute(trx);
+      const { rows } = await sql<{ assetId: string }>`
+        WITH lit AS (
+          SELECT ts."assetId", LOWER(ts.tag) AS tag,
+            CASE WHEN LOWER(ts.tag) = ${lowerQuery} THEN 0.001 ELSE 0.05 END::float8 AS base,
+            NULL::float8 AS emb_dist, true AS is_literal
+          FROM tag_search ts
+          WHERE LOWER(ts.tag) = ${lowerQuery}
+            OR LOWER(ts.tag) = ANY(${words}::text[])
+            OR LOWER(ts.tag) = ANY(${[...ngrams]}::text[])
+            OR LOWER(ts.tag) ~ ${boundaryPattern}
+        ), fuzzy AS (
+          SELECT ts."assetId", LOWER(ts.tag) AS tag, NULL::float8 AS base,
+            ((ts.embedding <=> ${options.embedding}) * 0.5)::float8 AS emb_dist, false AS is_literal
+          FROM tag_search ts
+          INNER JOIN (
+            SELECT tc.tag
+            FROM tag_idf tc
+            WHERE length(tc.tag) BETWEEN 4 AND 100
+              AND abs(length(tc.tag) - length(${lowerQuery})) <= 2
+              AND levenshtein(tc.tag, ${lowerQuery}) <= CASE WHEN length(${lowerQuery}) >= 7 THEN 2 ELSE 1 END
+          ) ft ON LOWER(ts.tag) = ft.tag
+        ), ann AS (
+          SELECT ts."assetId", LOWER(ts.tag) AS tag, NULL::float8 AS base,
+            (ts.embedding <=> ${options.embedding})::float8 AS emb_dist, false AS is_literal
+          FROM tag_search ts
+          ORDER BY ts.embedding <=> ${options.embedding}
+          LIMIT ${annLimit}
+        ), cand AS (
+          SELECT * FROM lit
+          UNION ALL SELECT * FROM fuzzy
+          UNION ALL SELECT * FROM ann
+        ), scored AS (
+          SELECT c."assetId", c.tag, c.is_literal,
+            COALESCE(
+              c.base,
+              c.emb_dist
+                / GREATEST(LEAST(array_length(string_to_array(c.tag, ' '), 1)::float / ${queryWords.length}::float, 1.0), 0.1)
+            )
+            / GREATEST(COALESCE(ln(tc.total_assets::float / GREATEST(tc.tag_count, 1)::float), 1.0), 1.0) AS dist
+          FROM cand c
+          LEFT JOIN tag_idf tc ON tc.tag = c.tag
+          WHERE c."assetId" IN (${filtered})
+        )
+        SELECT sub."assetId"
+        FROM (
+          SELECT s."assetId",
+            MIN(s.dist) / GREATEST(COUNT(DISTINCT s.tag) FILTER (WHERE s.is_literal), 1) AS best_dist
+          FROM scored s
+          GROUP BY s."assetId"
+          ORDER BY best_dist, s."assetId"
+          LIMIT ${limit}
+        ) sub
+        ORDER BY sub.best_dist, sub."assetId"
+      `.execute(trx);
+
+      return rows.map((r) => r.assetId);
+    });
+  }
+
+  private async getTagSearchProbes(): Promise<number> {
+    if (this.tagSearchProbes === undefined) {
+      const { rows } = await sql<{ indexdef: string }>`
+        SELECT indexdef FROM pg_indexes WHERE indexname = 'tag_search_embedding_idx'
+      `.execute(this.db);
+      // Measured on this dataset: recall@1024 plateaus at ~83% from probes=16
+      // upward (the gap is quantization, not probing), while cost rises
+      // sharply past lists/32. So probe 1/32 of lists instead of upstream's 1/8.
+      const lists = Number(rows[0]?.indexdef.match(/lists = \[(\d+)/)?.[1] ?? 1);
+      this.tagSearchProbes = Math.max(1, Math.ceil(lists / 32));
+    }
+    return this.tagSearchProbes;
+  }
+
+  async upsertTagEmbedding(assetId: string, tag: string, embedding: string): Promise<void> {
+    await sql`
+      INSERT INTO tag_search ("assetId", tag, embedding)
+      VALUES (${assetId}, ${tag}, ${embedding})
+      ON CONFLICT ("assetId", tag) DO UPDATE SET embedding = EXCLUDED.embedding
+    `.execute(this.db);
+  }
+
   async getCountries(userIds: string[]): Promise<string[]> {
     const res = await this.getExifField('country', userIds).execute();
     return res.map((row) => row.country!);
