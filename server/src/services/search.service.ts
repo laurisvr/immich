@@ -183,16 +183,46 @@ export class SearchService extends BaseService {
     const embedding = await this.resolveEmbedding(auth, dto, machineLearning);
     const page = dto.page ?? 1;
     const size = dto.size;
-    const { hasNextPage, items } = await this.searchRepository.searchSmart(
-      { page, size },
+    const resolvedUserIds = await userIds;
+
+    // For image-based search (queryAssetId), fall back to original CLIP search
+    if (!dto.query) {
+      const { hasNextPage, items } = await this.searchRepository.searchSmart(
+        { page, size },
+        {
+          ...dto,
+          userIds: resolvedUserIds,
+          viewingUserId: auth.user.id,
+          embedding,
+          visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
+        },
+      );
+      return this.mapResponse(items, { auth }, { nextPage: hasNextPage ? (page + 1).toString() : null });
+    }
+
+    // Tag-based search for text queries: find assets by AI-generated tag embeddings.
+    // Passes the full DTO so visibility and all other filters apply, same as searchSmart.
+    const tagAssetIds = await this.searchRepository.searchTags(
       {
         ...dto,
-        userIds: await userIds,
+        userIds: resolvedUserIds,
         viewingUserId: auth.user.id,
         embedding,
         visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
       },
+      dto.query,
+      page * size + 1,
     );
+
+    const hasNextPage = tagAssetIds.length > page * size;
+    const pageIds = tagAssetIds.slice((page - 1) * size, page * size);
+
+    // Fetch full asset data, preserving tag search order
+    const assets = pageIds.length > 0 ? await this.assetRepository.getByIds(pageIds) : [];
+    const assetMap = new Map(assets.map((a) => [a.id, a]));
+    const items = pageIds
+      .map((id) => assetMap.get(id))
+      .filter((item): item is NonNullable<typeof item> => item != null);
 
     return this.mapResponse(items, { auth }, { nextPage: hasNextPage ? (page + 1).toString() : null });
   }

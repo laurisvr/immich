@@ -1,0 +1,102 @@
+# Custom Immich server build (fork: description-embedding-search).
+#
+# Mirrors upstream server/Dockerfile but DROPS the `plugins` (mise/WASM) build
+# stage. The WASM core-plugin toolchain requires a heavy mise download and is
+# only used for optional workflow automation (album rules, etc.) that this
+# deployment does not use. At runtime the server's importFolder() swallows a
+# missing core-plugin folder with a warning (workflow-execution.service.ts), so
+# boot and all photo/search functionality are unaffected.
+#
+# Keep the base image digests and stage layout in sync with upstream
+# server/Dockerfile on each rebase (see scripts/rebase-immich.sh).
+
+FROM ghcr.io/immich-app/base-server-dev:202608300913@sha256:188679bfc2e7a496bdc13bd145cf59d90b2fb8f9dbf7131b2c1a368cd637b1a0 AS builder
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
+  CI=1 \
+  COREPACK_HOME=/tmp \
+  PNPM_HOME=/buildcache/pnpm-store \
+  PATH="/buildcache/pnpm-store:$PATH"
+
+RUN npm install --global corepack@latest && \
+  corepack enable pnpm && \
+  pnpm config set store-dir "$PNPM_HOME"
+
+WORKDIR /usr/src/app
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .pnpmfile.cjs ./
+
+FROM builder AS sdk
+
+COPY ./packages/sdk/package.json ./packages/sdk/package.json
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @immich/sdk install --frozen-lockfile
+
+COPY ./packages/sdk ./packages/sdk/
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @immich/sdk build
+
+FROM sdk AS plugin-sdk
+
+COPY ./packages/plugin-sdk/package.json ./packages/plugin-sdk/package.json
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @immich/plugin-sdk install --frozen-lockfile
+
+COPY ./packages/plugin-sdk ./packages/plugin-sdk/
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @immich/plugin-sdk build
+
+FROM plugin-sdk AS server
+
+COPY ./server/package.json ./server/package.json
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter immich install --frozen-lockfile
+
+COPY ./server ./server/
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
+  pnpm --filter immich build && \
+  pnpm --filter immich --prod --no-optional deploy /output/server-pruned
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
+  SHARP_FORCE_GLOBAL_LIBVIPS=true pnpm --config.verify-deps-before-run=false --dir /output/server-pruned/node_modules/sharp exec npm run build
+
+FROM sdk AS web
+
+COPY ./web/package.json ./web/package.json
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter immich-web install --frozen-lockfile
+
+COPY ./i18n ./i18n/
+COPY ./web ./web/
+
+ARG BUILD_ID
+ENV IMMICH_BUILD=${BUILD_ID}
+
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter immich-web build
+
+FROM sdk AS cli
+
+COPY ./packages/cli/package.json ./packages/cli/package.json
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store pnpm --filter @immich/cli install --frozen-lockfile
+
+COPY ./packages/cli ./packages/cli/
+RUN --mount=type=cache,id=pnpm,target=/buildcache/pnpm-store \
+  pnpm --filter @immich/cli build && \
+  pnpm --filter @immich/cli --prod --no-optional deploy /output/cli-pruned
+
+FROM ghcr.io/immich-app/base-server-prod:202608300913@sha256:e809772a5ee5babfe2073563a40757818f997feff8d161d30bf7b904ca49eb6b
+
+WORKDIR /usr/src/app
+ENV NODE_ENV=production \
+  NVIDIA_DRIVER_CAPABILITIES=all \
+  NVIDIA_VISIBLE_DEVICES=all
+
+COPY --from=server /output/server-pruned ./server
+COPY --from=web /usr/src/app/web/build /build/www
+COPY --from=cli /output/cli-pruned ./cli
+# NOTE: no core plugin — the mise/WASM `plugins` stage is intentionally omitted.
+# The server logs a single "Failed to import plugin" warning at boot and continues.
+RUN ln -s ../../cli/bin/immich server/bin/immich
+COPY LICENSE /licenses/LICENSE.txt
+COPY LICENSE /LICENSE
+
+ENV PATH="${PATH}:/usr/src/app/server/bin"
+
+VOLUME /data
+EXPOSE 2283
+ENTRYPOINT ["tini", "--", "/bin/bash", "-c"]
+CMD ["start.sh"]
+
+HEALTHCHECK CMD immich-healthcheck
