@@ -547,6 +547,21 @@ export class PersonRepository {
             .whereRef('asset.id', '=', 'asset_face.assetId'),
         ).as('asset'),
       )
+      // people already on another face in the same asset, so a person is never assigned twice to one asset
+      .select((eb) =>
+        eb.fn
+          .coalesce(
+            eb
+              .selectFrom('asset_face as sibling')
+              .select((eb) => eb.fn.agg<string[]>('array_agg', ['sibling.personGroupId']).as('ids'))
+              .whereRef('sibling.assetId', '=', 'asset_face.assetId')
+              .whereRef('sibling.id', '!=', 'asset_face.id')
+              .where('sibling.personGroupId', 'is not', null)
+              .where('sibling.deletedAt', 'is', null),
+            sql<string[]>`'{}'::uuid[]`,
+          )
+          .as('siblingPersonGroupIds'),
+      )
       .select(withFaceSearch)
       .where('asset_face.id', '=', id)
       .where('asset_face.deletedAt', 'is', null)

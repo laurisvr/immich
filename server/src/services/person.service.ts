@@ -607,6 +607,11 @@ export class PersonService extends BaseService {
       personGroupId = matchWithPerson?.personGroupId ?? undefined;
     }
 
+    if (personGroupId && face.siblingPersonGroupIds.includes(personGroupId)) {
+      this.logger.debug(`Face ${id} matched person ${personGroupId}, who is already on another face in this asset`);
+      return JobStatus.Skipped;
+    }
+
     if (!personGroupId && isCore) {
       const group = await this.personRepository.createGroup(ownerId);
       personGroupId = group.id;

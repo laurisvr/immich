@@ -1309,6 +1309,29 @@ describe(PersonService.name, () => {
       });
     });
 
+    it('should not assign a person who is already on another face in the same asset', async () => {
+      const asset = AssetFactory.create();
+
+      const [noPerson, primaryFace] = [
+        AssetFaceFactory.create({ assetId: asset.id }),
+        AssetFaceFactory.from().person({ ownerId: asset.ownerId }).build(),
+      ];
+
+      const faces = [getForFaceSearch(noPerson, 0), getForFaceSearch(primaryFace, 0.2)];
+
+      mocks.systemMetadata.get.mockResolvedValue({ machineLearning: { facialRecognition: { minFaces: 1 } } });
+      mocks.search.searchFaces.mockResolvedValue(faces);
+      mocks.person.getFaceForFacialRecognitionJob.mockResolvedValue(
+        getForFacialRecognitionJob(noPerson, asset, [primaryFace.person!.personGroupId]),
+      );
+
+      await expect(sut.handleRecognizeFaces({ id: noPerson.id })).resolves.toBe(JobStatus.Skipped);
+
+      expect(mocks.person.createGroup).not.toHaveBeenCalled();
+      expect(mocks.person.create).not.toHaveBeenCalled();
+      expect(mocks.person.reassignFaces).not.toHaveBeenCalled();
+    });
+
     it('should match existing person if their birth date is unknown', async () => {
       const asset = AssetFactory.create();
       const [noPerson, face, faceWithBirthDate] = [
