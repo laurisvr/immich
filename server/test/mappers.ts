@@ -59,8 +59,10 @@ export const getForFacialRecognitionJob = (
   face: ReturnType<AssetFaceFactory['build']>,
   asset:
     (Pick<Selectable<AssetTable>, 'ownerId' | 'visibility' | 'fileCreatedAt'> & { clusterGroupId?: string }) | null,
+  siblingPersonGroupIds: string[] = [],
 ) => ({
   ...face,
+  siblingPersonGroupIds,
   asset: asset
     ? {
         ownerId: asset.ownerId,
